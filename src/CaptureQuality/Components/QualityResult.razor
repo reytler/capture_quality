@@ -1,0 +1,36 @@
+@namespace CaptureQuality.Components
+
+@if (Result != null)
+{
+    <div class="result-card">
+        <div class="result-header">
+            <h2>Resultado da Análise</h2>
+            <span class="result-status @Result.Status.ToLower()">
+                @(Result.Status == "ACCEPTED" ? "Aceito" : "Rejeitado")
+            </span>
+        </div>
+
+        <div class="result-details">
+            <div class="detail-item">
+                <div class="detail-label">Taxa de Desfoque</div>
+                <div class="detail-value">@Result.BlurRatio.ToString("P1")</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Patches Analisados</div>
+                <div class="detail-value">@Result.TotalPatches</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Patches Borrados</div>
+                <div class="detail-value">@Result.BlurredPatches</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Status</div>
+                <div class="detail-value">@Result.Status</div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Services.BlurDetectionResult? Result { get; set; }
+}

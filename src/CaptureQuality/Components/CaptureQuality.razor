@@ -1,0 +1,66 @@
+@namespace CaptureQuality.Components
+
+<div class="capture-component">
+    <div class="page-header">
+        <h1>Detecção de Qualidade</h1>
+    </div>
+
+    <CameraCapture OnImageCaptured="OnImageCapturedHandler" />
+
+    @if (_isProcessing)
+    {
+        <div class="loading-overlay">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p>Analisando imagem...</p>
+            </div>
+        </div>
+    }
+
+    @if (_result != null)
+    {
+        <QualityResult Result="_result" />
+    }
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="error-message">
+            @_errorMessage
+        </div>
+    }
+</div>
+
+@code {
+    [Inject] private Services.BlurDetectorService? BlurDetector { get; set; }
+
+    private bool _isProcessing;
+    private Services.BlurDetectionResult? _result;
+    private string _errorMessage = "";
+
+    private async Task OnImageCapturedHandler(string imageData)
+    {
+        if (string.IsNullOrEmpty(imageData) || BlurDetector == null)
+            return;
+
+        _isProcessing = true;
+        _errorMessage = "";
+        _result = null;
+
+        try
+        {
+            var base64Data = imageData.Replace("data:image/png;base64,", "");
+            var imageBytes = Convert.FromBase64String(base64Data);
+
+            using var stream = new MemoryStream(imageBytes);
+            _result = await BlurDetector.DetectBlurAsync(stream);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Erro ao processar imagem: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+}

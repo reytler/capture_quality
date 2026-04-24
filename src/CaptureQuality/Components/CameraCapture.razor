@@ -1,0 +1,75 @@
+@namespace CaptureQuality.Components
+
+<div class="capture-container">
+    <div class="camera-wrapper">
+        <video id="cameraVideo" playsinline autoplay muted></video>
+        <canvas id="cameraCanvas" style="display: none;"></canvas>
+    </div>
+
+    <button class="capture-button" @onclick="CaptureImage" disabled="@_isCameraOff">
+        @(_isCameraOff ? "Iniciar Câmera" : "Capturar Imagem")
+    </button>
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnImageCaptured { get; set; }
+
+    [Inject] private IJSRuntime? JSRuntime { get; set; }
+
+    private bool _isCameraOff = true;
+    private bool _cameraInitialized;
+    private string _errorMessage = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_cameraInitialized)
+        {
+            await InitCamera();
+        }
+    }
+
+    private async Task InitCamera()
+    {
+        if (JSRuntime == null) { _isCameraOff = true; return; }
+        
+        try
+        {
+            var success = await JSRuntime.InvokeAsync<bool>("captureQuality.initCamera", "cameraVideo", "cameraCanvas");
+            _isCameraOff = !success;
+        }
+        catch
+        {
+            _isCameraOff = true;
+        }
+        finally
+        {
+            _cameraInitialized = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CaptureImage()
+    {
+        if (_isCameraOff)
+        {
+            await InitCamera();
+            return;
+        }
+
+        if (JSRuntime == null) return;
+
+        try
+        {
+            var imageData = await JSRuntime.InvokeAsync<string>("captureQuality.getImageData", "cameraCanvas");
+            await OnImageCaptured.InvokeAsync(imageData ?? "");
+        }
+        catch
+        {
+            _errorMessage = "Erro ao capturar imagem";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+    }
+}
