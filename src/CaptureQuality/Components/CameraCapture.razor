@@ -140,7 +140,9 @@
             }
             
             _errorMessage = "";
+            Console.WriteLine($"[CameraCapture:CaptureImage] Calling OnImageCaptured.InvokeAsync...");
             await OnImageCaptured.InvokeAsync(imageData);
+            Console.WriteLine($"[CameraCapture:CaptureImage] OnImageCaptured.InvokeAsync returned");
         }
         catch (Exception ex)
         {
@@ -148,9 +150,12 @@
         }
         finally
         {
+            Console.WriteLine($"[CameraCapture:CaptureImage] finally executed - resetting button. _isCapturing={_isCapturing}");
             _isCapturing = false;
             _buttonText = "Capturar Imagem";
+            Console.WriteLine($"[CameraCapture:CaptureImage] After reset - _isCapturing={_isCapturing}, _buttonText={_buttonText}");
             StateHasChanged();
+            Console.WriteLine($"[CameraCapture:CaptureImage] StateHasChanged called");
         }
     }
 

@@ -24,10 +24,7 @@
         </div>
     }
 
-    @if (_result != null)
-    {
-        <QualityResult Result="_result" />
-    }
+    <ProcessingQueue />
 
     @if (!string.IsNullOrEmpty(_errorMessage))
     {
@@ -38,47 +35,45 @@
 </div>
 
 @code {
-    [Inject] private Services.BlurDetectorService? BlurDetector { get; set; }
+    [Inject] private Services.ImageProcessingQueueService? QueueService { get; set; }
 
     private bool _isProcessing;
-    private Services.BlurDetectionResult? _result;
     private string _errorMessage = "";
     private string? _capturedImage;
 
     private async Task OnImageCapturedHandler(string imageData)
     {
-        if (string.IsNullOrEmpty(imageData) || BlurDetector == null)
-            return;
+        Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] ENTRY - imageData length: {imageData?.Length ?? 0}");
 
-        // CRITICAL FIX: Update UI state immediately before any processing
+        if (string.IsNullOrEmpty(imageData) || QueueService == null)
+        {
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] EARLY EXIT - imageData empty: {string.IsNullOrEmpty(imageData)}, QueueService null: {QueueService == null}");
+            return;
+        }
+
         _capturedImage = imageData;
         _isProcessing = true;
         _errorMessage = "";
-        _result = null;
-        
-        // CRITICAL FIX: Force UI to update NOW so loading overlay appears
+
         StateHasChanged();
 
         try
         {
-            var base64Data = imageData.Replace("data:image/png;base64,", "");
-            var imageBytes = Convert.FromBase64String(base64Data);
-
-            using var stream = new MemoryStream(imageBytes);
-            
-            // CRITICAL FIX: Run CPU-intensive work on background thread
-            // Task.Run schedules the entire async method on a thread pool thread
-            // This prevents UI freezing during SVD/K-means computation
-            _result = await Task.Run(() => BlurDetector.DetectBlurAsync(stream));
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] Calling QueueService.AddAsync...");
+            var result = await QueueService.AddAsync(imageData);
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] QueueService.AddAsync returned item ID: {result.Id}");
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] EXCEPTION: {ex.GetType().Name} - {ex.Message}");
             _errorMessage = $"Erro ao processar imagem: {ex.Message}";
         }
         finally
         {
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] finally executed");
             _isProcessing = false;
             StateHasChanged();
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] EXIT");
         }
     }
 }

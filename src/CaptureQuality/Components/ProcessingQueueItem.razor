@@ -1,0 +1,67 @@
+@namespace CaptureQuality.Components
+
+<div class="queue-item">
+    <div class="queue-item-thumbnail">
+        <img src="@Item.Thumbnail" alt="Thumbnail" />
+    </div>
+    
+    <div class="queue-item-info">
+        <div class="queue-item-header">
+            <span class="queue-item-id">#@Item.Id</span>
+            <span class="queue-item-status @GetStatusClass()">@GetStatusText()</span>
+        </div>
+        
+        @if (Item.Status == Models.QueueItemStatus.Processing)
+        {
+            <div class="queue-item-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: @Item.Progress%"></div>
+                </div>
+                <span class="progress-text">@Item.Progress%</span>
+            </div>
+        }
+        
+        @if (Item.Status == Models.QueueItemStatus.Completed && Item.Result != null)
+        {
+            <div class="queue-item-result">
+                <span class="blur-ratio">@Item.Result.BlurRatio:F2</span>
+                <span class="status-badge @(Item.Result.IsAccepted ? "accepted" : "rejected")">
+                    @Item.Result.Status
+                </span>
+            </div>
+        }
+        
+        @if (Item.Status == Models.QueueItemStatus.Failed)
+        {
+            <div class="queue-item-error">
+                @Item.ErrorMessage
+            </div>
+        }
+        
+        <div class="queue-item-timestamp">
+            @Item.Timestamp.ToLocalTime().ToString("HH:mm:ss")
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Models.ProcessingQueueItem Item { get; set; } = null!;
+    
+    private string GetStatusClass() => Item.Status switch
+    {
+        Models.QueueItemStatus.Pending => "status-pending",
+        Models.QueueItemStatus.Processing => "status-processing",
+        Models.QueueItemStatus.Completed => "status-completed",
+        Models.QueueItemStatus.Failed => "status-failed",
+        _ => ""
+    };
+    
+    private string GetStatusText() => Item.Status switch
+    {
+        Models.QueueItemStatus.Pending => "Pendente",
+        Models.QueueItemStatus.Processing => "Processando",
+        Models.QueueItemStatus.Completed => "Concluído",
+        Models.QueueItemStatus.Failed => "Erro",
+        _ => Item.Status.ToString()
+    };
+}

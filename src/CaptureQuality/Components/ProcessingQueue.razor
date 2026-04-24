@@ -1,0 +1,48 @@
+@namespace CaptureQuality.Components
+
+<div class="processing-queue">
+    <div class="queue-header">
+        <h2>Fila de Processamento</h2>
+        @if (Items.Count > 0)
+        {
+            <button class="clear-btn" @onclick="OnClear">Limpar</button>
+        }
+    </div>
+    
+    @if (Items.Count == 0)
+    {
+        <div class="queue-empty">
+            <p>Nenhuma imagem na fila. Capture uma imagem para começar.</p>
+        </div>
+    }
+    else
+    {
+        <div class="queue-list">
+            @foreach (var item in Items)
+            {
+                <ProcessingQueueItem Item="item" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Inject] private Services.ImageProcessingQueueService? QueueService { get; set; }
+    
+    private IReadOnlyList<Models.ProcessingQueueItem> Items => QueueService?.Items ?? new List<Models.ProcessingQueueItem>();
+    
+    protected override void OnInitialized()
+    {
+        QueueService.OnQueueChanged += OnQueueUpdated;
+    }
+    
+    private void OnQueueUpdated()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+    
+    private void OnClear()
+    {
+        QueueService?.Clear();
+    }
+}
