@@ -56,6 +56,7 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
 }
 
 .capture-button {
@@ -79,6 +80,66 @@ body {
 .capture-button:disabled {
     background-color: #ccc;
     cursor: not-allowed;
+}
+
+.file-upload-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    color: white;
+    background-color: var(--secondary-color);
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.file-upload-btn:hover {
+    background-color: #388E3C;
+}
+
+.preview-container {
+    margin: 16px auto;
+    max-width: 400px;
+    text-align: center;
+}
+
+.preview-image {
+    max-width: 100%;
+    border-radius: var(--border-radius);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.live-indicator {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+    z-index: 10;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    background: #f44336;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .result-card {

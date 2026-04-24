@@ -7,6 +7,13 @@
 
     <CameraCapture OnImageCaptured="OnImageCapturedHandler" />
 
+    @if (_capturedImage != null && !_isProcessing)
+    {
+        <div class="preview-container">
+            <img src="@_capturedImage" class="preview-image" alt="Captured" />
+        </div>
+    }
+
     @if (_isProcessing)
     {
         <div class="loading-overlay">
@@ -36,15 +43,21 @@
     private bool _isProcessing;
     private Services.BlurDetectionResult? _result;
     private string _errorMessage = "";
+    private string? _capturedImage;
 
     private async Task OnImageCapturedHandler(string imageData)
     {
         if (string.IsNullOrEmpty(imageData) || BlurDetector == null)
             return;
 
+        // CRITICAL FIX: Update UI state immediately before any processing
+        _capturedImage = imageData;
         _isProcessing = true;
         _errorMessage = "";
         _result = null;
+        
+        // CRITICAL FIX: Force UI to update NOW so loading overlay appears
+        StateHasChanged();
 
         try
         {
@@ -52,7 +65,11 @@
             var imageBytes = Convert.FromBase64String(base64Data);
 
             using var stream = new MemoryStream(imageBytes);
-            _result = await BlurDetector.DetectBlurAsync(stream);
+            
+            // CRITICAL FIX: Run CPU-intensive work on background thread
+            // Task.Run schedules the entire async method on a thread pool thread
+            // This prevents UI freezing during SVD/K-means computation
+            _result = await Task.Run(() => BlurDetector.DetectBlurAsync(stream));
         }
         catch (Exception ex)
         {
@@ -61,6 +78,7 @@
         finally
         {
             _isProcessing = false;
+            StateHasChanged();
         }
     }
 }

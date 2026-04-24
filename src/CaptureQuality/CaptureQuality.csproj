@@ -13,4 +13,11 @@
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="wwwroot\app.js" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="wwwroot\index.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="wwwroot\styles.css" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="wwwroot\manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

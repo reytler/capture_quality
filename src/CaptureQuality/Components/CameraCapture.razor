@@ -2,13 +2,42 @@
 
 <div class="capture-container">
     <div class="camera-wrapper">
-        <video id="cameraVideo" playsinline autoplay muted></video>
+        <video id="cameraVideo" playsinline muted></video>
         <canvas id="cameraCanvas" style="display: none;"></canvas>
+        
+        @if (_cameraActive)
+        {
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                AO VIVO
+            </div>
+        }
     </div>
 
-    <button class="capture-button" @onclick="CaptureImage" disabled="@_isCameraOff">
-        @(_isCameraOff ? "Iniciar Câmera" : "Capturar Imagem")
-    </button>
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="error-message error-info">@_errorMessage</div>
+    }
+
+    @if (_showFileUpload)
+    {
+        <label class="capture-button file-upload-btn">
+            Escolher Imagem
+            <InputFile style="display:none;" OnChange="OnFileSelected" accept="image/*" />
+        </label>
+    }
+    else if (_isCameraOff)
+    {
+        <button class="capture-button" @onclick="InitCamera">
+            @_buttonText
+        </button>
+    }
+    else
+    {
+        <button class="capture-button" @onclick="CaptureImage" disabled="@_isCapturing">
+            @_buttonText
+        </button>
+    }
 </div>
 
 @code {
@@ -16,9 +45,14 @@
 
     [Inject] private IJSRuntime? JSRuntime { get; set; }
 
+    private bool _isCapturing;
     private bool _isCameraOff = true;
     private bool _cameraInitialized;
+    private bool _cameraActive;
+    private bool _showFileUpload;
     private string _errorMessage = "";
+    private string _buttonText = "Iniciar Câmera";
+    private int _initAttempts;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -30,16 +64,45 @@
 
     private async Task InitCamera()
     {
-        if (JSRuntime == null) { _isCameraOff = true; return; }
+        _initAttempts++;
         
+        if (JSRuntime == null)
+        {
+            if (_initAttempts < 10)
+            {
+                await Task.Delay(500);
+                await InitCamera();
+            }
+            else
+            {
+                _errorMessage = "Nenhum dispositivo disponível";
+                _showFileUpload = true;
+                _isCameraOff = true;
+            }
+            return;
+        }
+
         try
         {
-            var success = await JSRuntime.InvokeAsync<bool>("captureQuality.initCamera", "cameraVideo", "cameraCanvas");
-            _isCameraOff = !success;
+            _errorMessage = "Procurando câmera...";
+            _buttonText = "Procurando...";
+            StateHasChanged();
+
+            await JSRuntime.InvokeAsync<object>("captureQuality.initCamera", "cameraVideo", "cameraCanvas");
+            
+            await Task.Delay(500);
+            
+            _isCameraOff = false;
+            _cameraActive = true;
+            _errorMessage = "";
+            _buttonText = "Capturar Imagem";
         }
         catch
         {
+            _errorMessage = "Nenhum dispositivo disponível";
+            _showFileUpload = true;
             _isCameraOff = true;
+            _cameraActive = false;
         }
         finally
         {
@@ -50,23 +113,60 @@
 
     private async Task CaptureImage()
     {
-        if (_isCameraOff)
-        {
-            await InitCamera();
-            return;
-        }
-
+        if (_isCapturing) return;
         if (JSRuntime == null) return;
+
+        // CRITICAL FIX: Set state BEFORE JS call and notify immediately
+        _isCapturing = true;
+        _buttonText = "Capturando...";
+        _errorMessage = "Capturando...";
+        
+        // CRITICAL FIX: Force UI update BEFORE await - this makes the button
+        // text change visible immediately
+        StateHasChanged();
 
         try
         {
-            var imageData = await JSRuntime.InvokeAsync<string>("captureQuality.getImageData", "cameraCanvas");
-            await OnImageCaptured.InvokeAsync(imageData ?? "");
+            // CRITICAL FIX: Use InvokeAsync withCancellation for better async handling
+            var imageData = await JSRuntime.InvokeAsync<string>(
+                "captureQuality.getImageData", 
+                "cameraVideo", 
+                "cameraCanvas");
+                
+            if (string.IsNullOrEmpty(imageData))
+            {
+                _errorMessage = "Falha ao capturar. Tente novamente.";
+                return;
+            }
+            
+            _errorMessage = "";
+            await OnImageCaptured.InvokeAsync(imageData);
         }
-        catch
+        catch (Exception ex)
         {
-            _errorMessage = "Erro ao capturar imagem";
+            _errorMessage = $"Erro ao capturar: {ex.Message}";
         }
+        finally
+        {
+            _isCapturing = false;
+            _buttonText = "Capturar Imagem";
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        using var stream = file.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        var imageBytes = ms.ToArray();
+        var base64 = Convert.ToBase64String(imageBytes);
+        var dataUrl = $"data:{file.ContentType};base64,{base64}";
+        
+        await OnImageCaptured.InvokeAsync(dataUrl);
     }
 
     public async ValueTask DisposeAsync()
