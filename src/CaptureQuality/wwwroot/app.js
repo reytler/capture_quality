@@ -93,55 +93,67 @@ window.captureQuality = {
         }
     },
 
-    // CRITICAL FIX: Made async to properly await from Blazor
-    getImageData: async function (videoElementId, canvasElementId) {
-        const video = document.getElementById(videoElementId);
-        const canvas = document.getElementById(canvasElementId);
-        
-        if (!video || !canvas) {
-            console.error('[CaptureQuality] getImageData: elements not found');
-            return null;
-        }
+    getImageBytes: async function (videoElementId, canvasElementId) {
+        try {
+            const video = document.getElementById(videoElementId);
+            const canvas = document.getElementById(canvasElementId);
 
-        // CRITICAL FIX: Use async waiting instead of blocking loop
-        // Wait for video to be ready (max 1 second)
-        if (video.readyState < 2) {
-            console.log('[CaptureQuality] Waiting for video ready...', video.readyState);
-            await new Promise(resolve => {
-                const checkReady = () => {
-                    if (video.readyState >= 2) {
-                        resolve();
-                    } else {
-                        // Use requestAnimationFrame for non-blocking wait
-                        requestAnimationFrame(checkReady);
+            if (!video || !canvas) {
+                throw new Error('[CaptureQuality] getImageBytes: elements not found');
+            }
+
+            if (video.readyState < 2) {
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Timeout aguardando vídeo ficar pronto.'));
+                    }, 3000);
+
+                    const checkReady = () => {
+                        if (video.readyState >= 2) {
+                            clearTimeout(timeout);
+                            resolve();
+                        } else {
+                            requestAnimationFrame(checkReady);
+                        }
+                    };
+
+                    checkReady();
+                });
+            }
+
+            const width = video.videoWidth || video.clientWidth || 640;
+            const height = video.videoHeight || video.clientHeight || 480;
+
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                throw new Error('Não foi possível obter o contexto 2D do canvas.');
+            }
+
+            ctx.drawImage(video, 0, 0, width, height);
+
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(result => {
+                    if (!result || result.size < 100) {
+                        reject(new Error('Imagem capturada vazia ou inválida.'));
+                        return;
                     }
-                };
-                checkReady();
+
+                    resolve(result);
+                }, 'image/png');
             });
+
+            console.log('[CaptureQuality] Blob capturado:', blob.size);
+
+            return blob;
+
+        } catch (error) {
+            console.error('[CaptureQuality-ERROR] getImageBytes:', error);
+            throw error;
         }
-        
-        // Additional small delay to ensure frame is fully rendered
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        const width = video.videoWidth || video.clientWidth || 640;
-        const height = video.videoHeight || video.clientHeight || 480;
-        
-        canvas.width = width;
-        canvas.height = height;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, width, height);
-        
-        var dataUrl = canvas.toDataURL('image/png');
-        
-        // Verificar se imagem tem conteúdo
-        if (!dataUrl || dataUrl.length < 100) {
-            console.error('[CaptureQuality] Imagem vazia:', dataUrl ? dataUrl.length : 'null');
-            return null;
-        }
-        
-        console.log('[CaptureQuality] Image captured:', dataUrl.substring(0, 60), '...len:', dataUrl.length);
-        return dataUrl;
     }
 };
 

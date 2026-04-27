@@ -21,12 +21,16 @@ public class BlurDetectorService
         _svdAnalyzer = svdAnalyzer;
     }
 
-    public async Task<BlurDetectionResult> DetectBlurAsync(Stream imageStream, Action<int>? onProgress = null)
+    public async Task<BlurDetectionResult> DetectBlurAsync(
+        Stream imageStream,
+        Action<int>? onProgress = null,
+        CancellationToken cancellationToken = default)
     {
         Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ENTRY");
 
-        using var image = await Image.LoadAsync<Rgba32>(imageStream);
+        using var image = await Image.LoadAsync<Rgba32>(imageStream, cancellationToken);
         Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Image loaded: {image.Width}x{image.Height}");
+        cancellationToken.ThrowIfCancellationRequested();
 
         int maxDim = _config.MaxImageDimension;
         if (image.Width > maxDim || image.Height > maxDim)
@@ -47,21 +51,26 @@ public class BlurDetectorService
 
         var grayscale = _imageProcessor.ToGrayscale(image);
         Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ToGrayscale done");
+        cancellationToken.ThrowIfCancellationRequested();
 
         var result = await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Running in background thread...");
 
             var medianFiltered = _imageProcessor.ApplyMedianFilter(grayscale, _config.MedianFilterSize);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ApplyMedianFilter done");
+            cancellationToken.ThrowIfCancellationRequested();
 
             var (intensity, localMedian, gradientMagnitude) = _imageProcessor.ExtractFeatures(grayscale, medianFiltered);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ExtractFeatures done");
+            cancellationToken.ThrowIfCancellationRequested();
 
             var segmentation = _imageProcessor.ApplyKmeans(intensity, localMedian, gradientMagnitude);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ApplyKmeans done");
 
             onProgress?.Invoke(25);
+            cancellationToken.ThrowIfCancellationRequested();
 
             var foreground = new float[grayscale.GetLength(0), grayscale.GetLength(1)];
             int fgCount = 0;
@@ -96,6 +105,7 @@ public class BlurDetectorService
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] AnalyzePatches done - {patchResults.Count} patches");
 
             onProgress?.Invoke(50);
+            cancellationToken.ThrowIfCancellationRequested();
 
             var fgPatchCount = 0;
             var fgPatches = new List<(int x, int y, double bk)>();
@@ -126,6 +136,7 @@ public class BlurDetectorService
             }
 
             onProgress?.Invoke(75);
+            cancellationToken.ThrowIfCancellationRequested();
 
             int width = grayscale.GetLength(0);
             int height = grayscale.GetLength(1);
@@ -134,6 +145,7 @@ public class BlurDetectorService
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] CalculateGlobalBlurRatio done - blurRatio: {blurRatio:F4}");
 
             onProgress?.Invoke(100);
+            cancellationToken.ThrowIfCancellationRequested();
 
             bool isAccepted = blurRatio < _config.BlurRatioThreshold;
 
@@ -151,7 +163,7 @@ public class BlurDetectorService
                 ImageWidth = width,
                 ImageHeight = height
             };
-        });
+        }, cancellationToken);
 
         return result;
     }

@@ -41,17 +41,17 @@
     private string _errorMessage = "";
     private string? _capturedImage;
 
-    private async Task OnImageCapturedHandler(string imageData)
+    private async Task OnImageCapturedHandler(Models.CapturedImagePayload image)
     {
-        Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] ENTRY - imageData length: {imageData?.Length ?? 0}");
+        Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] ENTRY - thumbnail length: {image?.ThumbnailUrl?.Length ?? 0}");
 
-        if (string.IsNullOrEmpty(imageData) || QueueService == null)
+        if (image == null || string.IsNullOrEmpty(image.ThumbnailUrl) || QueueService == null)
         {
-            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] EARLY EXIT - imageData empty: {string.IsNullOrEmpty(imageData)}, QueueService null: {QueueService == null}");
+            Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] EARLY EXIT - image missing: {image == null}, QueueService null: {QueueService == null}");
             return;
         }
 
-        _capturedImage = imageData;
+        _capturedImage = image.ThumbnailUrl;
         _isProcessing = true;
         _errorMessage = "";
 
@@ -60,7 +60,7 @@
         try
         {
             Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] Calling QueueService.AddAsync...");
-            var result = await QueueService.AddAsync(imageData);
+            var result = await QueueService.AddAsync(image);
             Console.WriteLine($"[CaptureQuality:OnImageCapturedHandler] QueueService.AddAsync returned item ID: {result.Id}");
         }
         catch (Exception ex)

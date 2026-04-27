@@ -19,6 +19,11 @@
                 </div>
                 <span class="progress-text">@Item.Progress%</span>
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(Item.Message))
+            {
+                <div class="queue-item-timestamp">@Item.Message</div>
+            }
         }
         
         @if (Item.Status == Models.QueueItemStatus.Completed && Item.Result != null)
@@ -37,6 +42,13 @@
                 @Item.ErrorMessage
             </div>
         }
+
+        @if (Item.Status == Models.QueueItemStatus.Canceled)
+        {
+            <div class="queue-item-error">
+                Processamento cancelado.
+            </div>
+        }
         
         <div class="queue-item-timestamp">
             @Item.Timestamp.ToLocalTime().ToString("HH:mm:ss")
@@ -51,6 +63,7 @@
     {
         Models.QueueItemStatus.Pending => "status-pending",
         Models.QueueItemStatus.Processing => "status-processing",
+        Models.QueueItemStatus.Canceled => "status-failed",
         Models.QueueItemStatus.Completed => "status-completed",
         Models.QueueItemStatus.Failed => "status-failed",
         _ => ""
@@ -60,6 +73,7 @@
     {
         Models.QueueItemStatus.Pending => "Pendente",
         Models.QueueItemStatus.Processing => "Processando",
+        Models.QueueItemStatus.Canceled => "Cancelado",
         Models.QueueItemStatus.Completed => "Concluído",
         Models.QueueItemStatus.Failed => "Erro",
         _ => Item.Status.ToString()

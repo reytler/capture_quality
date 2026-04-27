@@ -1,170 +1,255 @@
-# AGENTS.md - Agentic Coding Guidelines for capture_quality
-
-> **Multi-Agent Architecture**: This repository uses a multi-agent workflow under `.opencode/agents/`.
-> See sections below for routing specs and policies.
-
-## Evidence-First Policy (Required)
-- Only claim a stack, command, or convention when you can cite evidence from the repo (file path).
-- If evidence is missing, label as `Candidate` and include how to verify.
-
-## Token-Minimization Policy (Required)
-- Prefer references over repetition: use file paths and small excerpts.
-- Do not paste large files; quote only what justifies a decision.
-
-## Verification Policy (Required)
-Before finalizing any change proposal:
-- Verify referenced paths exist (`src/CaptureQuality/`).
-- Verify commands exist or are clearly marked as `Candidate`.
-- Flag non-ASCII characters in newly written/updated files (file + line).
+# AGENTS.md - Capture Quality Project
 
 ## Project Overview
 
-- **Primary stack**: .NET 8.0 Blazor WebAssembly (detected via `src/CaptureQuality/CaptureQuality.csproj:1-4`)
-- **Secondary stacks**: None
+This is a document image blur detection system built with Blazor WebAssembly and ASP.NET Core. The system analyzes images using SVD (Singular Value Decomposition) to detect blur in document captures before OCR processing.
 
-## Repository Layout (Observed)
-
-```
-capture_quality/
-├── src/CaptureQuality/
-│   ├── Services/           # Blur detection pipeline
-│   ├── Components/         # Razor UI components
-│   ├── Pages/              # Route pages
-│   ├── Layouts/            # Layouts
-│   ├── Program.cs          # DI registration
-│   └── App.razor           # Root component
-├── docs/                   # Methodology docs
-├── Directory.Build.props   # Shared MSBuild properties
-└── CaptureQuality.slnx      # Solution file
-```
-
-## Services Architecture (Observed)
-
-Evidence: `src/CaptureQuality/Services/*.cs` and `src/CaptureQuality/Program.cs:11-14`
+### Project Structure
 
 ```
-ConfigurationService         # Defaults: K=1, PatchSize=27, PatchThreshold=0.64, BlurRatioThreshold=0.35
-    │
-    ├── ImageProcessorService   # Grayscale, MedianFilter, K-means, Features
-    │
-    ├── SvdAnalyzerService      # SVD, Bk calculation, Global blur ratio
-    │
-    └── BlurDetectorService     # Orchestrator (load -> resize -> grayscale -> features -> segment -> patches -> result)
+src/
+├── CaptureQuality/           # Blazor WebAssembly client
+├── CaptureQuality.Server/   # ASP.NET Core server with SignalR
+├── CaptureQuality.slnx      # Solution file
 ```
 
-## Commands (Observed / Preferred)
+## Build Commands
 
-Run from repo root unless noted.
+### Build the entire solution
+```bash
+dotnet build
+```
 
-### Install/Restore
-- `dotnet restore` or implicit (build triggers restore)
-  Evidence: `CaptureQuality.slnx` exists (solution file)
+### Build specific project
+```bash
+dotnet build src/CaptureQuality/CaptureQuality.csproj
+dotnet build src/CaptureQuality.Server/CaptureQuality.Server.csproj
+```
 
-### Build/Compile
-- `dotnet build src/CaptureQuality/CaptureQuality.csproj`
-  Evidence: `src/CaptureQuality/CaptureQuality.csproj:1`
+### Run the server (serves both API and Blazor client)
+```bash
+cd src/CaptureQuality.Server && dotnet run
+```
 
-### Lint/Static Analysis
-- **Not configured** - Candidate: `dotnet format --verify-no-changes` (requires dotnet format global tool)
-  Evidence: No `.editorconfig` or style rule files detected
+### Run specific project
+```bash
+dotnet run --project src/CaptureQuality.Server/CaptureQuality.Server.csproj
+```
 
-### Format
-- **Check**: `dotnet format --verify-no-changes src/CaptureQuality/CaptureQuality.csproj` (Candidate)
-- **Apply**: `dotnet format src/CaptureQuality/CaptureQuality.csproj` (Candidate)
+### Clean build artifacts
+```bash
+dotnet clean
+```
 
-### Test
-- **Suite**: No test project exists (Candidate: create with `dotnet new xunit -o tests`)
-- **Single test** (if supported): `dotnet test --filter "FullyQualifiedName~MethodName"`
+### Publish the server
+```bash
+dotnet publish src/CaptureQuality.Server/CaptureQuality.Server.csproj -c Release -o ./publish
+```
 
-### Run/Dev/Watch
-- `dotnet run --project src/CaptureQuality/CaptureQuality.csproj`
-  Evidence: Blazor WASM uses `dotnet run` for dev server
+### Add a package to a project
+```bash
+dotnet add src/CaptureQuality/CaptureQuality.csproj package <PackageName>
+```
 
-### Publish
-- `dotnet publish src/CaptureQuality/CaptureQuality.csproj -c Release`
-  Evidence: `AGENTS.md:31-34`
+## Testing
 
-## Code Style (Repository-Specific)
+This project currently has no formal test framework configured. Manual testing is done by:
 
-Evidence: `src/CaptureQuality/Services/*.cs`, `Directory.Build.props`
+1. Running the server (`dotnet run` in CaptureQuality.Server)
+2. Opening the browser at the served URL
+3. Using the camera capture demo to test blur detection
 
-### File Organization
-- **File-scoped namespaces**: `namespace CaptureQuality.Services;`
-- One public class per file, named same as file
+## Code Style Guidelines
 
-### Naming
-| Element | Convention | Example |
-|---------|------------|---------|
-| Classes | PascalCase | `BlurDetectorService` |
-| Public Methods | PascalCase | `DetectBlurAsync` |
-| Private Fields | `_camelCase` | `_config` |
-| Parameters | camelCase | `imageStream` |
+### .NET Configuration
 
-### Async
-- Use `Async` suffix for async methods
-- Use `await` rather than blocking
-- Configure `ConfigureAwait(false)` for library code (optional)
+The project uses `Directory.Build.props` which configures:
+- **Target Framework**: net8.0
+- **Language Version**: latest
+- **Nullable**: enabled
+- **Implicit Usings**: enabled
 
-### Nullable
-- Nullable reference types enabled (csproj:5)
-- Use `?` for nullable types
+Always respect these settings in new code.
 
-## Blur Detection Pipeline (Observed)
+### Namespace Organization
 
-Evidence: `src/CaptureQuality/Services/BlurDetectorService.cs:23-127`
+```
+CaptureQuality/              # Client-side Blazor components and services
+CaptureQuality.Models/      # Shared DTOs and models
+CaptureQuality.Services/    # Image processing and blur detection services
+CaptureQuality.Server/      # Server-side code
+CaptureQuality.Server.Hubs/ # SignalR hubs
+CaptureQuality.Server.Services/ # Server-side services
+CaptureQuality.Server.Contracts/ # Server DTOs
+```
 
-1. Load image (ImageSharp) - line 25
-2. Resize if needed (Config.MaxImageDimension) - lines 27-42
-3. Convert to grayscale - line 44
-4. Apply median filter - line 46
-5. Extract features (intensity, local median, gradient) - line 48
-6. Segment with K-means (foreground/background) - line 50
-7. Filter foreground patches - lines 52-106
-8. Analyze patches with SVD - line 78
-9. Calculate global blur ratio - lines 110-111
+### File Naming Conventions
 
-## SVD Algorithm Parameters (Observed)
+- **Classes**: `PascalCase.cs` (e.g., `BlurDetectorService.cs`)
+- **Interfaces**: `I` prefix + PascalCase (e.g., `IBlurJobStore.cs`)
+- **Enums**: PascalCase (e.g., `BlurJobState.cs`)
+- **DTOs/Records**: PascalCase with suffix indicating type (e.g., `BlurDetectionMetricsDto.cs`)
 
-Evidence: `src/CaptureQuality/Services/ConfigurationService.cs` and `docs/regras.md:71-89`
+### Class Structure
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| K | 1 | Number of singular values to consider |
-| PatchSize | 27 | Patch grid size |
-| PatchThreshold | 0.64 | Bk threshold for blurred patch |
-| BlurRatioThreshold | 0.35 | Global threshold for image acceptance |
-| MedianFilterSize | 31 | Lighting bias correction window |
+```csharp
+// Namespace matches folder structure
+namespace CaptureQuality.Services;
 
-Key formula: `Bk = sum of first k singular values^2 / sum of all singular values^2`
+// Public classes use PascalCase
+public class ServiceName
+{
+    // Private fields use _camelCase underscore prefix
+    private readonly IService _dependency;
+    private readonly int _someValue;
+    
+    // Constructor for dependency injection
+    public ServiceName(IService dependency, int someValue)
+    {
+        _dependency = dependency;
+        _someValue = someValue;
+    }
+    
+    // Public methods use PascalCase
+    public async Task<Result> DoWorkAsync(CancellationToken cancellationToken = default)
+    {
+        // Implementation
+    }
+}
+```
 
-## Architecture Boundaries
+### Type Usage
 
-- **Services** (`Services/`): Pure logic, no UI
-- **Components** (`Components/`): UI only, inject services via `[Inject]`
-- **Program.cs**: DI registration only, no business logic
+- **Prefer `record`** for immutable DTOs/data transfer objects
+- **Use `init` setters** for properties that should only be set at initialization
+- **Use `sealed`** for classes not meant to be inherited
+- **Prefer `List<T>` over arrays** for collections unless performance-critical
+- **Use `float[,]` for 2D image arrays** (row-major: [x, y])
+- **Use `bool[,]` for masks and binary maps**
+- **Use tuples** `(int x, int y, double value)` for lightweight return types
+- **Use nullable reference types** (`T?`) for optional values
 
-### What belongs where
+### Error Handling
 
-| Task | Location |
-|------|----------|
-| Add new blur detection method | `SvdAnalyzerService.cs` |
-| Add new image preprocessing | `ImageProcessorService.cs` |
-| Add new UI component | `Components/` |
-| Change default parameters | `ConfigurationService.cs` |
-| Register new service | `Program.cs:11-14` |
+```csharp
+// Use specific exceptions for expected errors
+throw new BadHttpRequestException("Message", StatusCodes.Status4xx);
+throw new ArgumentNullException(nameof(param));
 
-## Hygiene
-- Do not commit local artifacts (editor/build outputs, `obj/`, `bin/`).
-- Do not add secrets to repo.
-- Do not modify product code. Only touch:
-  - `AGENTS.md`
-  - `.opencode/agents/*.md`
+// Catch and handle gracefully
+catch (OperationCanceledException)
+{
+    // Handle cancellation - this is normal
+}
+catch (Exception ex)
+{
+    // Log and handle unexpected errors
+    Console.WriteLine($"Error: {ex.Message}");
+}
 
-## Multi-Agent Routing
+// For result patterns, return null or a Result type rather than throwing
+```
 
-When using the multi-agent system, follow the routing specs in orchestrators:
+### Async/Await Patterns
 
-- **Entry**: `.opencode/agents/analysis.md` - for understanding/exploring code
-- **Entry**: `.opencode/agents/implement.md` - for implementing features/fixes
+```csharp
+// Always accept CancellationToken in async methods
+public async Task<Result> ProcessAsync(CancellationToken cancellationToken = default)
+{
+    // Check for cancellation periodically
+    cancellationToken.ThrowIfCancellationRequested();
+    
+    // Use ValueTask for hot paths when possible
+    public async ValueTask DisposeAsync()
+}
 
-Orchestrators delegate to subagents based on task type.
+// Use Task.Run() for CPU-bound work to avoid blocking
+var result = await Task.Run(() => CpuIntensiveOperation(), cancellationToken);
+```
+
+### Logging
+
+Use `Console.WriteLine` for debug output during development:
+```csharp
+Console.WriteLine($"[ServiceName:MethodName] Step description");
+```
+
+### Image Processing Patterns
+
+- **Coordinate order**: `[x, y]` for 2D arrays (x is width/column, y is height/row)
+- **Use `Image.LoadAsync<T>` with `using` for proper disposal**
+- **Process in background threads** for heavy operations using `Task.Run()`
+- **Report progress** via callbacks: `Action<int>? onProgress`
+
+### SignalR Hub Pattern
+
+```csharp
+public sealed class HubName : Hub
+{
+    public Task Subscribe(string groupId)
+    {
+        return Groups.AddToGroupAsync(Context.ConnectionId, GetGroupName(groupId));
+    }
+    
+    public static string GetGroupName(string id) => $"prefix:{id}";
+}
+```
+
+### Import Organization
+
+Order imports as:
+1. System namespaces (implicit with ImplicitUsings)
+2. Third-party packages
+3. Project references
+
+```csharp
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using MathNet.Numerics.LinearAlgebra;
+using MathNet.Numerics.LinearAlgebra.Double;
+using CaptureQuality.Models;
+using CaptureQuality.Server.Hubs;
+using Microsoft.AspNetCore.SignalR;
+```
+
+### Key Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| SixLabors.ImageSharp | 3.1.4 | Image loading and processing |
+| MathNet.Numerics | 5.0.0 | SVD and linear algebra |
+| Microsoft.AspNetCore.SignalR.Client | 8.0.0 | Real-time updates from client |
+| Microsoft.AspNetCore.Components.WebAssembly | 8.0.0 | Blazor client |
+
+## Important Implementation Notes
+
+### Blur Detection Algorithm
+
+The blur detection uses SVD-based analysis:
+- **k = 1** (number of singular values to analyze)
+- **Patch size = 27** pixels
+- **Patch threshold = 0.64** (Bk >= threshold means blurred)
+- **Global threshold = 0.35** (blur_ratio >= 0.35 means reject)
+
+### Configuration Service
+
+All blur detection parameters are in `ConfigurationService.cs`:
+- K, PatchSize, PatchThreshold, BlurRatioThreshold
+- MedianFilterSize, GradientKernelSize, MaxImageDimension
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/blur-detection | Direct blur detection (sync) |
+| POST | /api/blur-jobs | Create async job |
+| GET | /api/blur-jobs/{id} | Get job status |
+| DELETE | /api/blur-jobs/{id} | Cancel job |
+| Hub | /hubs/blur-jobs | SignalR for real-time updates |
+
+### Memory Management
+
+- Always dispose `Image` objects with `using`
+- Use `MemoryStream` with `using` for stream operations
+- For large uploads, limit form body size (currently 10MB)

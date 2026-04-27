@@ -41,7 +41,7 @@
 </div>
 
 @code {
-    [Parameter] public EventCallback<string> OnImageCaptured { get; set; }
+    [Parameter] public EventCallback<Models.CapturedImagePayload> OnImageCaptured { get; set; }
 
     [Inject] private IJSRuntime? JSRuntime { get; set; }
 
@@ -127,13 +127,27 @@
 
         try
         {
-            // CRITICAL FIX: Use InvokeAsync withCancellation for better async handling
-            var imageData = await JSRuntime.InvokeAsync<string>(
-                "captureQuality.getImageData", 
+            Console.WriteLine($"[CameraCapture:CaptureImage] inicio.");
+            await using var imageStreamReference = await JSRuntime.InvokeAsync<IJSStreamReference?>(
+                "captureQuality.getImageBytes",
                 "cameraVideo", 
                 "cameraCanvas");
-                
-            if (string.IsNullOrEmpty(imageData))
+            Console.WriteLine($"[CameraCapture:CaptureImage] imageStreamReference: {imageStreamReference}");
+            if (imageStreamReference is null)
+            {
+                _errorMessage = "Falha ao capturar. Tente novamente.";
+                return;
+            }
+            Console.WriteLine($"[CameraCapture:CaptureImage] Iniciando openstream: {imageStreamReference}");
+            await using var imageStream = await imageStreamReference.OpenReadStreamAsync(10 * 1024 * 1024);
+            Console.WriteLine($"[CameraCapture:CaptureImage] imageStream: {imageStream}");
+            using var imageBuffer = new MemoryStream();
+            await imageStream.CopyToAsync(imageBuffer);
+            Console.WriteLine($"[CameraCapture:CaptureImage] imageStream: {imageStream}");
+            var imageBytes = imageBuffer.ToArray();
+            Console.WriteLine($"[CameraCapture:CaptureImage] imageBytes: {imageBytes}");
+                 
+            if (imageBytes is null || imageBytes.Length == 0)
             {
                 _errorMessage = "Falha ao capturar. Tente novamente.";
                 return;
@@ -141,7 +155,13 @@
             
             _errorMessage = "";
             Console.WriteLine($"[CameraCapture:CaptureImage] Calling OnImageCaptured.InvokeAsync...");
-            await OnImageCaptured.InvokeAsync(imageData);
+            await OnImageCaptured.InvokeAsync(new Models.CapturedImagePayload
+            {
+                Bytes = imageBytes,
+                ContentType = "image/png",
+                FileName = $"capture-{DateTime.UtcNow:yyyyMMddHHmmss}.png",
+                ThumbnailUrl = $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}"
+            });
             Console.WriteLine($"[CameraCapture:CaptureImage] OnImageCaptured.InvokeAsync returned");
         }
         catch (Exception ex)
@@ -167,11 +187,15 @@
         using var stream = file.OpenReadStream(10 * 1024 * 1024);
         using var ms = new MemoryStream();
         await stream.CopyToAsync(ms);
-        var imageBytes = ms.ToArray();
-        var base64 = Convert.ToBase64String(imageBytes);
-        var dataUrl = $"data:{file.ContentType};base64,{base64}";
-        
-        await OnImageCaptured.InvokeAsync(dataUrl);
+        var thumbnailBytes = ms.ToArray();
+
+        await OnImageCaptured.InvokeAsync(new Models.CapturedImagePayload
+        {
+            BrowserFile = file,
+            ContentType = file.ContentType,
+            FileName = file.Name,
+            ThumbnailUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(thumbnailBytes)}"
+        });
     }
 
     public async ValueTask DisposeAsync()

@@ -26,6 +26,8 @@
     }
 </div>
 
+@implements IDisposable
+
 @code {
     [Inject] private Services.ImageProcessingQueueService? QueueService { get; set; }
     
@@ -33,7 +35,10 @@
     
     protected override void OnInitialized()
     {
-        QueueService.OnQueueChanged += OnQueueUpdated;
+        if (QueueService is not null)
+        {
+            QueueService.OnQueueChanged += OnQueueUpdated;
+        }
     }
     
     private void OnQueueUpdated()
@@ -44,5 +49,13 @@
     private void OnClear()
     {
         QueueService?.Clear();
+    }
+
+    public void Dispose()
+    {
+        if (QueueService is not null)
+        {
+            QueueService.OnQueueChanged -= OnQueueUpdated;
+        }
     }
 }
