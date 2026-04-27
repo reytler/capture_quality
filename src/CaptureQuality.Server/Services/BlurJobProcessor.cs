@@ -1,6 +1,5 @@
 using CaptureQuality.Models;
 using CaptureQuality.Server.Hubs;
-using CaptureQuality.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CaptureQuality.Server.Services;
@@ -8,17 +7,20 @@ namespace CaptureQuality.Server.Services;
 public sealed class BlurJobProcessor : BackgroundService
 {
     private readonly IBlurJobStore _jobStore;
-    private readonly BlurDetectorService _detector;
+    private readonly IBlurDetectionEngine _detector;
     private readonly IHubContext<BlurJobHub> _hubContext;
+    private readonly ILogger<BlurJobProcessor> _logger;
 
     public BlurJobProcessor(
         IBlurJobStore jobStore,
-        BlurDetectorService detector,
-        IHubContext<BlurJobHub> hubContext)
+        IBlurDetectionEngine detector,
+        IHubContext<BlurJobHub> hubContext,
+        ILogger<BlurJobProcessor> logger)
     {
         _jobStore = jobStore;
         _detector = detector;
         _hubContext = hubContext;
+        _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -43,34 +45,26 @@ public sealed class BlurJobProcessor : BackgroundService
 
             try
             {
+                _logger.LogInformation("Starting blur job {JobId} with engine {EngineName}", jobId, _detector.Name);
                 using var stream = new MemoryStream(job.ImageBytes, writable: false);
                 var result = await _detector.DetectBlurAsync(
                     stream,
                     progress => HandleProgress(jobId, progress),
                     linkedCts.Token);
 
-                var dto = new BlurDetectionMetricsDto
-                {
-                    IsAccepted = result.IsAccepted,
-                    BlurRatio = result.BlurRatio,
-                    TotalPatches = result.TotalPatches,
-                    BlurredPatches = result.BlurredPatches,
-                    Status = result.Status,
-                    PatchSize = result.PatchSize,
-                    ImageWidth = result.ImageWidth,
-                    ImageHeight = result.ImageHeight
-                };
-
-                _jobStore.TryComplete(jobId, dto);
+                _jobStore.TryComplete(jobId, result.ToDto());
+                _logger.LogInformation("Completed blur job {JobId} with engine {EngineName} and status {Status}", jobId, _detector.Name, result.Status);
                 await PublishAsync(jobId, stoppingToken);
             }
             catch (OperationCanceledException)
             {
+                _logger.LogInformation("Canceled blur job {JobId} with engine {EngineName}", jobId, _detector.Name);
                 _jobStore.TryFail(jobId, "Job canceled", canceled: true);
                 await PublishAsync(jobId, stoppingToken);
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Blur job {JobId} failed with engine {EngineName}", jobId, _detector.Name);
                 _jobStore.TryFail(jobId, ex.Message, canceled: false);
                 await PublishAsync(jobId, stoppingToken);
             }

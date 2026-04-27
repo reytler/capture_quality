@@ -1,4 +1,5 @@
 using CaptureQuality.Models;
+using CaptureQuality.Server.Configuration;
 using CaptureQuality.Server.Hubs;
 using CaptureQuality.Server.Services;
 using CaptureQuality.Services;
@@ -16,10 +17,14 @@ builder.Services.Configure<FormOptions>(o =>
 });
 
 builder.Services.AddSignalR();
+builder.Services.Configure<ServerBlurDetectionOptions>(builder.Configuration.GetSection(ServerBlurDetectionOptions.SectionName));
 builder.Services.AddSingleton<ConfigurationService>();
 builder.Services.AddSingleton<BlurDetectorService>();
 builder.Services.AddSingleton<ImageProcessorService>();
 builder.Services.AddSingleton<SvdAnalyzerService>();
+builder.Services.AddSingleton<LegacySvdBlurDetectionEngine>();
+builder.Services.AddSingleton<OpenCvSpikeBlurDetectionEngine>();
+builder.Services.AddSingleton<IBlurDetectionEngine, BlurDetectionEngineFactory>();
 builder.Services.AddSingleton<IBlurJobStore, InMemoryBlurJobStore>();
 builder.Services.AddHostedService<BlurJobProcessor>();
 
@@ -66,32 +71,24 @@ static async Task<(string FileName, string ContentType, byte[] Bytes)?> ReadUplo
     return (file.FileName, file.ContentType, buffer.ToArray());
 }
 
-static async Task<IResult> BlurDetectionHandler(HttpRequest request, BlurDetectorService detector, CancellationToken cancellationToken)
+static async Task<IResult> BlurDetectionHandler(HttpRequest request, IBlurDetectionEngine detector, CancellationToken cancellationToken)
 {
     try
     {
+        var logger = request.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("BlurDetectionHandler");
         var upload = await ReadUploadAsync(request);
         if (upload is null)
         {
             return Results.BadRequest("Expected multipart/form-data with form file 'file'");
         }
 
+        logger.LogInformation("Handling synchronous blur detection with engine {EngineName}", detector.Name);
+
         using var stream = new MemoryStream(upload.Value.Bytes, writable: false);
         var result = await detector.DetectBlurAsync(stream, cancellationToken: cancellationToken);
 
-        var dto = new BlurDetectionMetricsDto
-        {
-            IsAccepted = result.IsAccepted,
-            BlurRatio = result.BlurRatio,
-            TotalPatches = result.TotalPatches,
-            BlurredPatches = result.BlurredPatches,
-            Status = result.Status,
-            PatchSize = result.PatchSize,
-            ImageWidth = result.ImageWidth,
-            ImageHeight = result.ImageHeight
-        };
-
-        return Results.Ok(dto);
+        logger.LogInformation("Completed synchronous blur detection with engine {EngineName} and status {Status}", detector.Name, result.Status);
+        return Results.Ok(result.ToDto());
     }
     catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
     {
@@ -100,6 +97,12 @@ static async Task<IResult> BlurDetectionHandler(HttpRequest request, BlurDetecto
     catch (BadHttpRequestException ex)
     {
         return Results.BadRequest(ex.Message);
+    }
+    catch (Exception ex)
+    {
+        var logger = request.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("BlurDetectionHandler");
+        logger.LogError(ex, "Synchronous blur detection failed");
+        return Results.Problem(title: "Blur detection failed", detail: ex.Message);
     }
 }
 
