@@ -93,6 +93,21 @@ public class SvdAnalyzerService
             await onProgress(1.0);
         }
 
+        // Calculate Bk statistics for diagnostic
+        if (results.Any())
+        {
+            var bkValues = results.Select(r => r.bk).OrderBy(b => b).ToList();
+            double bkMin = bkValues.First();
+            double bkMax = bkValues.Last();
+            double bkMedian = bkValues[bkValues.Count / 2];
+            double bkMean = bkValues.Average();
+            int highBkCount = bkValues.Count(v => v >= _config.PatchThreshold);
+            
+            Console.WriteLine($"[SvdAnalyzer:AnalyzePatches] Patch analysis complete - Total: {results.Count}");
+            Console.WriteLine($"[SvdAnalyzer:AnalyzePatches] Bk stats - Min: {bkMin:F4}, Max: {bkMax:F4}, Median: {bkMedian:F4}, Mean: {bkMean:F4}");
+            Console.WriteLine($"[SvdAnalyzer:AnalyzePatches] Patches with Bk >= {_config.PatchThreshold}: {highBkCount} ({(highBkCount * 100.0 / results.Count):F2}%)");
+        }
+
         return results;
     }
 
@@ -119,6 +134,10 @@ public class SvdAnalyzerService
 
         int total = patchResults.Count;
         double blurRatio = total > 0 ? (double)blurredCount / total : 0;
+
+        Console.WriteLine($"[SvdAnalyzer:CalculateGlobalBlurRatio] blurRatio: {blurRatio:F4}, threshold: {threshold}");
+        Console.WriteLine($"[SvdAnalyzer:CalculateGlobalBlurRatio] Total patches: {total}, Blurred: {blurredCount}, Clear: {total - blurredCount}");
+        Console.WriteLine($"[SvdAnalyzer:CalculateGlobalBlurRatio] Decision: {(blurRatio >= threshold ? "REJECTED" : "ACCEPTED")}");
 
         return (total, blurredCount, blurRatio, blurMap);
     }

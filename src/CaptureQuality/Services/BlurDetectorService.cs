@@ -48,13 +48,22 @@ public class BlurDetectorService
                 newWidth = (int)((float)image.Width / image.Height * maxDim);
             }
             image.Mutate(x => x.Resize(newWidth, newHeight));
+            Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Image resized to: {image.Width}x{image.Height} (original: {image.Width}x{image.Height})");
         }
 
         await (onProgress?.Invoke(15) ?? Task.CompletedTask);
         cancellationToken.ThrowIfCancellationRequested();
 
         var grayscale = _imageProcessor.ToGrayscale(image);
-        Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ToGrayscale done");
+        // Log grayscale stats
+        double grayMean = 0;
+        int grayWidth = grayscale.GetLength(0);
+        int grayHeight = grayscale.GetLength(1);
+        for (int y = 0; y < grayHeight; y++)
+            for (int x = 0; x < grayWidth; x++)
+                grayMean += grayscale[x, y];
+        grayMean /= (grayWidth * grayHeight);
+        Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Grayscale stats - Mean: {grayMean:F4}, Dimensions: {grayWidth}x{grayHeight}");
         await (onProgress?.Invoke(20) ?? Task.CompletedTask);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -72,8 +81,20 @@ public class BlurDetectorService
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ExtractFeatures done");
             cancellationToken.ThrowIfCancellationRequested();
 
-            var segmentation = _imageProcessor.ApplyKmeans(intensity, localMedian, gradientMagnitude);
+            var (segmentation, centroids) = _imageProcessor.ApplyKmeans(intensity, localMedian, gradientMagnitude);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ApplyKmeans done");
+            
+            // Log K-means centroids and cluster distribution
+            int cluster0Count = 0, cluster1Count = 0;
+            int segWidth = segmentation.GetLength(0);
+            int segHeight = segmentation.GetLength(1);
+            for (int y = 0; y < segHeight; y++)
+                for (int x = 0; x < segWidth; x++)
+                    if (segmentation[x, y] == 0) cluster0Count++; else cluster1Count++;
+            
+            int fgLabel = centroids[0, 2] > centroids[1, 2] ? 0 : 1;
+            Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] K-means - Cluster0: {cluster0Count}, Cluster1: {cluster1Count}, fgLabel: {fgLabel}");
+            Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Centroids - C0: [I={centroids[0,0]:F4}, M={centroids[0,1]:F4}, G={centroids[0,2]:F4}], C1: [I={centroids[1,0]:F4}, M={centroids[1,1]:F4}, G={centroids[1,2]:F4}]");
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -104,7 +125,7 @@ public class BlurDetectorService
                 };
             }
 
-            Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Foreground extraction done - fgCount: {fgCount}");
+            Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Foreground extraction done - fgCount: {fgCount}, fgPercentage: {fgCount * 100.0 / (grayscale.GetLength(0) * grayscale.GetLength(1)):F2}%, dimensions: {grayscale.GetLength(0)}x{grayscale.GetLength(1)}");
 
             var patchResults = await _svdAnalyzer.AnalyzePatches(
                 foreground,
@@ -157,6 +178,15 @@ public class BlurDetectorService
             cancellationToken.ThrowIfCancellationRequested();
 
             bool isAccepted = blurRatio < _config.BlurRatioThreshold;
+
+            // Summary log for diagnostic
+            Console.WriteLine($"[BlurDetectorService] === ANALYSIS SUMMARY ===");
+            Console.WriteLine($"[BlurDetectorService] Image: {width}x{height}, PatchSize: {_config.PatchSize}, K: {_config.K}");
+            Console.WriteLine($"[BlurDetectorService] Thresholds - PatchThreshold: {_config.PatchThreshold}, BlurRatioThreshold: {_config.BlurRatioThreshold}");
+            Console.WriteLine($"[BlurDetectorService] Filters - MedianSize: {_config.MedianFilterSize}, GradientKernel: {_config.GradientKernelSize}");
+            Console.WriteLine($"[BlurDetectorService] Results - TotalPatches: {total}, BlurredPatches: {blurred}, BlurRatio: {blurRatio:F4}");
+            Console.WriteLine($"[BlurDetectorService] Decision: {(isAccepted ? "ACCEPTED" : "REJECTED")} (BlurRatio {blurRatio:F4} < Threshold {_config.BlurRatioThreshold})");
+            Console.WriteLine($"[BlurDetectorService] =========================");
 
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] DONE - IsAccepted: {isAccepted}");
 

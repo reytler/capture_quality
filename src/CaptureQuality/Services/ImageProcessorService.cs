@@ -100,7 +100,7 @@ public class ImageProcessorService
         return (intensity, localMedian, gradientMagnitude);
     }
 
-    public int[,] ApplyKmeans(float[,] intensity, float[,] localMedian, float[,] gradientMagnitude, int k = 2)
+    public (int[,] labels, double[,] centroids) ApplyKmeans(float[,] intensity, float[,] localMedian, float[,] gradientMagnitude, int k = 2)
     {
         int width = intensity.GetLength(0);
         int height = intensity.GetLength(1);
@@ -192,7 +192,7 @@ public class ImageProcessorService
             }
         }
 
-        return labels;
+        return (labels, centroids);
     }
 
     public float[,] ResizeImage(float[,] image, int maxDimension)
