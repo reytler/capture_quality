@@ -29,10 +29,7 @@
         @if (Item.Status == Models.QueueItemStatus.Completed && Item.Result != null)
         {
             <div class="queue-item-result">
-                <span class="blur-ratio">@Item.Result.BlurRatio:F2</span>
-                <span class="status-badge @(Item.Result.IsAccepted ? "accepted" : "rejected")">
-                    @Item.Result.Status
-                </span>
+                <QualityResult Result="Item.Result" Compact="true" />
             </div>
         }
         

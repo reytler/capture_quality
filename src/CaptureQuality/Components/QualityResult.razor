@@ -2,13 +2,16 @@
 
 @if (Result != null)
 {
-    <div class="result-card">
-        <div class="result-header">
-            <h2>Resultado da Análise</h2>
-            <span class="result-status @Result.Status.ToLower()">
-                @(Result.Status == "ACCEPTED" ? "Aceito" : "Rejeitado")
-            </span>
-        </div>
+    <div class="result-card @(!Compact ? "" : "compact")">
+        @if (!Compact)
+        {
+            <div class="result-header">
+                <h2>Resultado da Análise</h2>
+                <span class="status-badge @Result.Status.ToLower()">
+                    @(Result.Status == "ACCEPTED" ? "Aceito" : "Rejeitado")
+                </span>
+            </div>
+        }
 
         <div class="result-details">
             <div class="detail-item">
@@ -16,21 +19,31 @@
                 <div class="detail-value">@Result.BlurRatio.ToString("P1")</div>
             </div>
             <div class="detail-item">
-                <div class="detail-label">Patches Analisados</div>
+                <div class="detail-label">Partes Analisadas</div>
                 <div class="detail-value">@Result.TotalPatches</div>
             </div>
             <div class="detail-item">
-                <div class="detail-label">Patches Borrados</div>
+                <div class="detail-label">Partes Borradas</div>
                 <div class="detail-value">@Result.BlurredPatches</div>
             </div>
             <div class="detail-item">
-                <div class="detail-label">Status</div>
-                <div class="detail-value">@Result.Status</div>
+                <div class="detail-label">Resultado</div>
+                <span class="status-badge @(Result.IsAccepted ? "accepted" : "rejected")">
+                    @(Result.IsAccepted ? "Aceito" : "Rejeitado")
+                </span>
             </div>
+            @if (!Compact && Result.ImageWidth > 0 && Result.ImageHeight > 0)
+            {
+                <div class="detail-item">
+                    <div class="detail-label">Tamanho da Imagem</div>
+                    <div class="detail-value">@Result.ImageWidth x @Result.ImageHeight</div>
+                </div>
+            }
         </div>
     </div>
 }
 
 @code {
     [Parameter] public Models.BlurDetectionResult? Result { get; set; }
+    [Parameter] public bool Compact { get; set; } = false;
 }
