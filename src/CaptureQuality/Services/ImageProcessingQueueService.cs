@@ -1,18 +1,22 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using CaptureQuality.Models;
 
 namespace CaptureQuality.Services;
 
 public class ImageProcessingQueueService
 {
-    private readonly BlurDetectorService _blurDetector;
+    private const int MaxUploadBytes = 10 * 1024 * 1024;
+    private readonly HttpClient _http;
     private readonly ConcurrentDictionary<string, ProcessingQueueItem> _queue = new();
     private readonly SemaphoreSlim _processingSemaphore = new(1);
     private bool _isProcessing;
 
-    public ImageProcessingQueueService(BlurDetectorService blurDetector)
+    public ImageProcessingQueueService(HttpClient http)
     {
-        _blurDetector = blurDetector;
+        _http = http;
     }
 
     public event Action<string, int>? OnProgressUpdate;
@@ -72,18 +76,60 @@ public class ImageProcessingQueueService
 
                 try
                 {
-                    Console.WriteLine($"[ImageProcessingQueueService:ProcessQueueAsync] Calling BlurDetector.DetectBlurAsync...");
-                    var result = await _blurDetector.DetectBlurAsync(
-                        new MemoryStream(Convert.FromBase64String(pending.ImageData.Split(',')[1])),
-                        progress =>
-                        {
-                            pending.Progress = progress;
-                            OnProgressUpdate?.Invoke(pending.Id, progress);
-                        });
-                    pending.Result = result;
+                    pending.Progress = 10;
+                    OnProgressUpdate?.Invoke(pending.Id, pending.Progress);
+
+                    var bytes = DecodeDataUrlToBytes(pending.ImageData);
+                    if (bytes.Length > MaxUploadBytes)
+                    {
+                        throw new InvalidOperationException("Image exceeds 10MB limit");
+                    }
+
+                    var contentType = TryGetDataUrlContentType(pending.ImageData) ?? "application/octet-stream";
+                    var fileName = contentType.Equals("image/png", StringComparison.OrdinalIgnoreCase)
+                        ? "capture.png"
+                        : contentType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)
+                            ? "capture.jpg"
+                            : "capture.bin";
+
+                    using var fileContent = new ByteArrayContent(bytes);
+                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+                    using var form = new MultipartFormDataContent();
+                    form.Add(fileContent, "file", fileName);
+
+                    using var response = await _http.PostAsync("api/blur-detection", form);
+                    if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+                    {
+                        throw new InvalidOperationException("Image exceeds 10MB limit");
+                    }
+
+                    response.EnsureSuccessStatusCode();
+
+                    var metrics = await response.Content.ReadFromJsonAsync<BlurDetectionMetricsDto>();
+                    if (metrics is null)
+                    {
+                        throw new InvalidOperationException("Empty blur-detection response");
+                    }
+
+                    pending.Result = new BlurDetectionResult
+                    {
+                        IsAccepted = metrics.IsAccepted,
+                        BlurRatio = metrics.BlurRatio,
+                        TotalPatches = metrics.TotalPatches,
+                        BlurredPatches = metrics.BlurredPatches,
+                        Status = metrics.Status,
+                        PatchSize = metrics.PatchSize,
+                        ImageWidth = metrics.ImageWidth,
+                        ImageHeight = metrics.ImageHeight,
+                        BlurMap = null
+                    };
+
+                    pending.Progress = 100;
+                    OnProgressUpdate?.Invoke(pending.Id, pending.Progress);
                     pending.Status = QueueItemStatus.Completed;
                     OnItemCompleted?.Invoke(pending.Id);
-                    Console.WriteLine($"[ImageProcessingQueueService:ProcessQueueAsync] Item {pending.Id} completed - BlurRatio: {result.BlurRatio:F2}");
+                    Console.WriteLine($"[ImageProcessingQueueService:ProcessQueueAsync] Item {pending.Id} completed - BlurRatio: {pending.Result.BlurRatio:F2}");
                 }
                 catch (Exception ex)
                 {
@@ -106,5 +152,33 @@ public class ImageProcessingQueueService
     {
         _queue.Clear();
         OnQueueChanged?.Invoke();
+    }
+
+    private static string? TryGetDataUrlContentType(string dataUrl)
+    {
+        if (string.IsNullOrWhiteSpace(dataUrl)) return null;
+        if (!dataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return null;
+
+        int semi = dataUrl.IndexOf(';');
+        if (semi <= "data:".Length) return null;
+
+        return dataUrl["data:".Length..semi];
+    }
+
+    private static byte[] DecodeDataUrlToBytes(string dataUrl)
+    {
+        if (string.IsNullOrWhiteSpace(dataUrl))
+        {
+            throw new InvalidOperationException("Missing image data");
+        }
+
+        int comma = dataUrl.IndexOf(',');
+        if (comma < 0 || comma == dataUrl.Length - 1)
+        {
+            throw new InvalidOperationException("Invalid image data URL");
+        }
+
+        var base64 = dataUrl[(comma + 1)..];
+        return Convert.FromBase64String(base64);
     }
 }

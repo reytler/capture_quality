@@ -12,6 +12,6 @@ builder.Services.AddSingleton<ConfigurationService>();
 builder.Services.AddSingleton<BlurDetectorService>();
 builder.Services.AddSingleton<ImageProcessorService>();
 builder.Services.AddSingleton<SvdAnalyzerService>();
-builder.Services.AddSingleton<ImageProcessingQueueService>();
+builder.Services.AddScoped<ImageProcessingQueueService>();
 
 await builder.Build().RunAsync();

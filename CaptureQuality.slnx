@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/CaptureQuality/CaptureQuality.csproj" />
+    <Project Path="src/CaptureQuality.Server/CaptureQuality.Server.csproj" />
   </Folder>
 </Solution>
