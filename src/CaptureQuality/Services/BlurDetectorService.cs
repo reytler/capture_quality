@@ -23,13 +23,14 @@ public class BlurDetectorService
 
     public async Task<BlurDetectionResult> DetectBlurAsync(
         Stream imageStream,
-        Action<int>? onProgress = null,
+        Func<int, Task>? onProgress = null,
         CancellationToken cancellationToken = default)
     {
         Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ENTRY");
 
         using var image = await Image.LoadAsync<Rgba32>(imageStream, cancellationToken);
         Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Image loaded: {image.Width}x{image.Height}");
+        await (onProgress?.Invoke(10) ?? Task.CompletedTask);
         cancellationToken.ThrowIfCancellationRequested();
 
         int maxDim = _config.MaxImageDimension;
@@ -49,17 +50,22 @@ public class BlurDetectorService
             image.Mutate(x => x.Resize(newWidth, newHeight));
         }
 
-        var grayscale = _imageProcessor.ToGrayscale(image);
-        Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ToGrayscale done");
+        await (onProgress?.Invoke(15) ?? Task.CompletedTask);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var result = await Task.Run(() =>
+        var grayscale = _imageProcessor.ToGrayscale(image);
+        Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ToGrayscale done");
+        await (onProgress?.Invoke(20) ?? Task.CompletedTask);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = await Task.Run(async () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Running in background thread...");
 
             var medianFiltered = _imageProcessor.ApplyMedianFilter(grayscale, _config.MedianFilterSize);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ApplyMedianFilter done");
+            await (onProgress?.Invoke(25) ?? Task.CompletedTask);
             cancellationToken.ThrowIfCancellationRequested();
 
             var (intensity, localMedian, gradientMagnitude) = _imageProcessor.ExtractFeatures(grayscale, medianFiltered);
@@ -69,7 +75,6 @@ public class BlurDetectorService
             var segmentation = _imageProcessor.ApplyKmeans(intensity, localMedian, gradientMagnitude);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] ApplyKmeans done");
 
-            onProgress?.Invoke(25);
             cancellationToken.ThrowIfCancellationRequested();
 
             var foreground = new float[grayscale.GetLength(0), grayscale.GetLength(1)];
@@ -101,10 +106,14 @@ public class BlurDetectorService
 
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] Foreground extraction done - fgCount: {fgCount}");
 
-            var patchResults = _svdAnalyzer.AnalyzePatches(foreground, _config.PatchSize, _config.K);
+            var patchResults = await _svdAnalyzer.AnalyzePatches(
+                foreground,
+                _config.PatchSize,
+                _config.K,
+                progress => (onProgress?.Invoke(30 + (int)(progress * 15)) ?? Task.CompletedTask));
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] AnalyzePatches done - {patchResults.Count} patches");
 
-            onProgress?.Invoke(50);
+            await (onProgress?.Invoke(50) ?? Task.CompletedTask);
             cancellationToken.ThrowIfCancellationRequested();
 
             var fgPatchCount = 0;
@@ -135,7 +144,7 @@ public class BlurDetectorService
                 }
             }
 
-            onProgress?.Invoke(75);
+            await (onProgress?.Invoke(65) ?? Task.CompletedTask);
             cancellationToken.ThrowIfCancellationRequested();
 
             int width = grayscale.GetLength(0);
@@ -144,12 +153,14 @@ public class BlurDetectorService
                 fgPatches, width, height, _config.PatchSize, _config.PatchThreshold);
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] CalculateGlobalBlurRatio done - blurRatio: {blurRatio:F4}");
 
-            onProgress?.Invoke(100);
+            await (onProgress?.Invoke(80) ?? Task.CompletedTask);
             cancellationToken.ThrowIfCancellationRequested();
 
             bool isAccepted = blurRatio < _config.BlurRatioThreshold;
 
             Console.WriteLine($"[BlurDetectorService:DetectBlurAsync] DONE - IsAccepted: {isAccepted}");
+
+            await (onProgress?.Invoke(100) ?? Task.CompletedTask);
 
             return new BlurDetectionResult
             {

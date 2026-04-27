@@ -77,11 +77,11 @@ public sealed class BlurJobProcessor : BackgroundService
         }
     }
 
-    private void HandleProgress(string jobId, int progress)
+    private async Task HandleProgress(string jobId, int progress)
     {
         var (stage, message) = MapStage(progress);
         _jobStore.TryMarkProgress(jobId, progress, stage, message);
-        _ = PublishAsync(jobId, CancellationToken.None);
+        await PublishAsync(jobId, CancellationToken.None);
     }
 
     private async Task PublishAsync(string jobId, CancellationToken cancellationToken)
@@ -99,10 +99,17 @@ public sealed class BlurJobProcessor : BackgroundService
     {
         return progress switch
         {
-            25 => ("segmentation", "Segmentation complete"),
-            50 => ("patch-analysis", "Patch analysis complete"),
-            75 => ("foreground-filter", "Foreground filtering complete"),
+            10 => ("loading", "Image loaded"),
+            15 => ("resize", "Image resized"),
+            20 => ("grayscale", "Grayscale conversion complete"),
+            25 => ("median-filter", "Median filter applied"),
+            30 => ("patch-analysis", "Patch analysis started"),
+            45 => ("patch-analysis", "Patch analysis complete"),
+            50 => ("foreground-filter", "Foreground filtering complete"),
+            65 => ("global-ratio", "Global blur ratio calculated"),
+            80 => ("finalizing", "Finalizing results"),
             100 => ("completed", "Processing complete"),
+            _ when progress > 30 && progress < 45 => ("patch-analysis", "Analyzing patches"),
             _ => ("running", "Processing image")
         };
     }

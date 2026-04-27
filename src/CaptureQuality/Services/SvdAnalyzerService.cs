@@ -46,14 +46,20 @@ public class SvdAnalyzerService
         return sumFirstK / sumAll;
     }
 
-    public List<(int x, int y, double bk)> AnalyzePatches(
+    public async Task<List<(int x, int y, double bk)>> AnalyzePatches(
         float[,] foreground,
         int patchSize,
-        int k)
+        int k,
+        Func<double, Task>? onProgress = null)
     {
         int width = foreground.GetLength(0);
         int height = foreground.GetLength(1);
         var results = new List<(int x, int y, double bk)>();
+
+        int totalPatchesY = (height - patchSize) / patchSize + 1;
+        int totalPatchesX = (width - patchSize) / patchSize + 1;
+        int totalPatches = totalPatchesY * totalPatchesX;
+        int patchCount = 0;
 
         for (int py = 0; py <= height - patchSize; py += patchSize)
         {
@@ -73,7 +79,18 @@ public class SvdAnalyzerService
 
                 double bk = CalculateBk(patch, k);
                 results.Add((px, py, bk));
+
+                patchCount++;
+                if (onProgress != null && patchCount % Math.Max(1, totalPatches / 10) == 0)
+                {
+                    await onProgress((double)patchCount / totalPatches);
+                }
             }
+        }
+
+        if (onProgress != null)
+        {
+            await onProgress(1.0);
         }
 
         return results;
