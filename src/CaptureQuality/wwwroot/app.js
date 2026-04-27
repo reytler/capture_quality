@@ -1,8 +1,11 @@
 // CaptureQuality App JavaScript
 
 window.captureQuality = {
-    initCamera: async function (videoElementId, canvasElementId) {
-        console.log('[CaptureQuality] initCamera chamado:', videoElementId, canvasElementId);
+    _currentStream: null,
+    _currentFacingMode: 'environment',
+
+    initCamera: async function (videoElementId, canvasElementId, facingMode = 'environment') {
+        console.log('[CaptureQuality] initCamera called:', videoElementId, canvasElementId, facingMode);
         console.log('[CaptureQuality] Location:', window.location.href);
         console.log('[CaptureQuality] Protocol:', window.location.protocol);
         console.log('[CaptureQuality] Host:', window.location.host);
@@ -12,38 +15,50 @@ window.captureQuality = {
         
         if (!video || !canvas) {
             console.error('[CaptureQuality] Video or canvas element not found', { video: !!video, canvas: !!canvas });
-            return false;
+            return { success: false, error: 'Elements not found' };
         }
 
-        // Verificar se navigator.mediaDevices está disponível
         if (!navigator.mediaDevices) {
-            console.error('[CaptureQuality] navigator.mediaDevices não disponível');
-            return false;
+            console.error('[CaptureQuality] navigator.mediaDevices not available');
+            return { success: false, error: 'MediaDevices not available' };
         }
         
-        console.log('[CaptureQuality] navigator.mediaDevices disponível');
+        console.log('[CaptureQuality] navigator.mediaDevices available');
         console.log('[CaptureQuality] Permissions state:', navigator.permissions);
 
-        // Tentar primeiro com constraints mínimas
-        var constraints = {
-            video: true
+        // Stop existing stream
+        if (this._currentStream) {
+            this._currentStream.getTracks().forEach(track => track.stop());
+            this._currentStream = null;
+        }
+
+        this._currentFacingMode = facingMode;
+
+        // Try with facingMode first
+        const constraints = {
+            video: {
+                facingMode: facingMode,
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            }
         };
-        
+
         try {
-            console.log('[CaptureQuality] Tentando getUserMedia com constraints:', constraints);
+            console.log('[CaptureQuality] Trying getUserMedia with facingMode:', facingMode);
             
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             
-            console.log('[CaptureQuality] Stream obtida com sucesso!');
+            console.log('[CaptureQuality] Stream obtained successfully!');
             
             video.srcObject = stream;
+            this._currentStream = stream;
             
-            // play e esperar video estar pronto
+            // play and wait for video to be ready
             await video.play();
             
-            // Esperar até video ter dimensões (readyState >= 2)
+            // Wait until video has dimensions (readyState >= 2)
             if (video.readyState < 2) {
-                console.log('[CaptureQuality] Aguardando video ready...');
+                console.log('[CaptureQuality] Waiting for video ready...');
                 await new Promise(resolve => {
                     video.onloadedmetadata = () => resolve();
                     setTimeout(() => resolve(), 2000); // timeout 2s
@@ -52,15 +67,45 @@ window.captureQuality = {
             
             console.log('[CaptureQuality] Video ready:', video.videoWidth, 'x', video.videoHeight, 'readyState:', video.readyState);
             
-            // Configurar dimensions do canvas
+            // Configure canvas dimensions
             canvas.width = video.videoWidth || video.clientWidth || 640;
             canvas.height = video.videoHeight || video.clientHeight || 480;
             
-            return true;
+            // Check if we can switch cameras
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoInputs = devices.filter(d => d.kind === 'videoinput');
+            const canSwitch = videoInputs.length > 1;
+
+            return {
+                success: true,
+                facingMode: facingMode,
+                canSwitch: canSwitch,
+                deviceId: stream.getVideoTracks()[0]?.getSettings()?.deviceId
+            };
         } catch (err) {
-            console.error('[CaptureQuality] getUserMedia error:', err.name, err.message);
-            throw new Error("Camera not found: " + err.message);
+            console.error('[CaptureQuality] Camera init failed:', err.name, err.message);
+            return { success: false, error: err.message };
         }
+    },
+
+    switchCamera: async function (videoElementId, canvasElementId) {
+        console.log('[CaptureQuality] switchCamera called');
+        
+        const newFacingMode = this._currentFacingMode === 'environment' ? 'user' : 'environment';
+        console.log('[CaptureQuality] Switching from', this._currentFacingMode, 'to', newFacingMode);
+        
+        return await this.initCamera(videoElementId, canvasElementId, newFacingMode);
+    },
+
+    getCameraInfo: async function () {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(d => d.kind === 'videoinput');
+        
+        return {
+            facingMode: this._currentFacingMode,
+            canSwitch: videoInputs.length > 1,
+            deviceId: this._currentStream?.getVideoTracks()[0]?.getSettings()?.deviceId
+        };
     },
 
     captureFrame: function (videoElementId, canvasElementId) {
@@ -86,9 +131,13 @@ window.captureQuality = {
     },
 
     stopCamera: function (videoElementId) {
+        if (this._currentStream) {
+            this._currentStream.getTracks().forEach(track => track.stop());
+            this._currentStream = null;
+        }
+        
         const video = document.getElementById(videoElementId);
-        if (video && video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
+        if (video) {
             video.srcObject = null;
         }
     },
@@ -105,7 +154,7 @@ window.captureQuality = {
             if (video.readyState < 2) {
                 await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
-                        reject(new Error('Timeout aguardando vídeo ficar pronto.'));
+                        reject(new Error('Timeout waiting for video to be ready.'));
                     }, 3000);
 
                     const checkReady = () => {
@@ -130,7 +179,7 @@ window.captureQuality = {
             const ctx = canvas.getContext('2d');
 
             if (!ctx) {
-                throw new Error('Não foi possível obter o contexto 2D do canvas.');
+                throw new Error('Could not get 2D context of canvas.');
             }
 
             ctx.drawImage(video, 0, 0, width, height);
@@ -138,7 +187,7 @@ window.captureQuality = {
             const blob = await new Promise((resolve, reject) => {
                 canvas.toBlob(result => {
                     if (!result || result.size < 100) {
-                        reject(new Error('Imagem capturada vazia ou inválida.'));
+                        reject(new Error('Captured image is empty or invalid.'));
                         return;
                     }
 
@@ -146,7 +195,7 @@ window.captureQuality = {
                 }, 'image/png');
             });
 
-            console.log('[CaptureQuality] Blob capturado:', blob.size);
+            console.log('[CaptureQuality] Blob captured:', blob.size);
 
             return blob;
 
@@ -157,4 +206,4 @@ window.captureQuality = {
     }
 };
 
-console.log('[CaptureQuality] app.js carregado');
+console.log('[CaptureQuality] app.js loaded');

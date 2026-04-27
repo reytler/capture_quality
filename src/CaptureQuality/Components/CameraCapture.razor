@@ -12,6 +12,22 @@
                 AO VIVO
             </div>
         }
+
+        @if (_canSwitchCamera && _cameraActive)
+        {
+            <button class="camera-switch-btn @(_isSwitchingCamera ? "switching" : "")" 
+                    @onclick="ToggleCameraAsync" 
+                    disabled="@_isSwitchingCamera"
+                    title="Trocar câmera">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3L5 6.99h3V14h2V6.99h3L9 3zm7 14.01V10h-2v7.01h-3L15 21l4-3.99h-3z"/>
+                </svg>
+                @if (_isSwitchingCamera)
+                {
+                    <span>Trocando...</span>
+                }
+            </button>
+        }
     </div>
 
     @if (!string.IsNullOrEmpty(_errorMessage))
@@ -53,6 +69,9 @@
     private string _errorMessage = "";
     private string _buttonText = "Iniciar Câmera";
     private int _initAttempts;
+    private string _currentFacingMode = "environment";
+    private bool _canSwitchCamera;
+    private bool _isSwitchingCamera;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -88,14 +107,23 @@
             _buttonText = "Procurando...";
             StateHasChanged();
 
-            await JSRuntime.InvokeAsync<object>("captureQuality.initCamera", "cameraVideo", "cameraCanvas");
+            var result = await JSRuntime.InvokeAsync<CameraInfoResult>("captureQuality.initCamera", "cameraVideo", "cameraCanvas", _currentFacingMode);
             
-            await Task.Delay(500);
-            
-            _isCameraOff = false;
-            _cameraActive = true;
-            _errorMessage = "";
-            _buttonText = "Capturar Imagem";
+            if (result?.Success == true)
+            {
+                await Task.Delay(500);
+                
+                _isCameraOff = false;
+                _cameraActive = true;
+                _canSwitchCamera = result.CanSwitch;
+                _currentFacingMode = result.FacingMode ?? "environment";
+                _errorMessage = "";
+                _buttonText = "Capturar Imagem";
+            }
+            else
+            {
+                throw new Exception(result?.Error ?? "Falha ao inicializar câmera");
+            }
         }
         catch
         {
@@ -111,18 +139,53 @@
         }
     }
 
+    private async Task ToggleCameraAsync()
+    {
+        if (_isSwitchingCamera || !_cameraActive || JSRuntime == null)
+            return;
+            
+        _isSwitchingCamera = true;
+        StateHasChanged();
+        
+        try
+        {
+            _currentFacingMode = _currentFacingMode == "environment" ? "user" : "environment";
+            var result = await JSRuntime.InvokeAsync<CameraInfoResult>("captureQuality.initCamera", "cameraVideo", "cameraCanvas", _currentFacingMode);
+            
+            if (result?.Success == true)
+            {
+                _canSwitchCamera = result.CanSwitch;
+                _cameraActive = true;
+                _errorMessage = "";
+            }
+            else
+            {
+                _currentFacingMode = _currentFacingMode == "environment" ? "user" : "environment";
+                _cameraActive = true;
+                _canSwitchCamera = result?.CanSwitch ?? _canSwitchCamera;
+                _errorMessage = result?.Error ?? "Erro ao trocar câmera";
+            }
+        }
+        catch (Exception ex)
+        {
+            _currentFacingMode = _currentFacingMode == "environment" ? "user" : "environment";
+            _errorMessage = $"Erro ao trocar câmera: {ex.Message}";
+        }
+        finally
+        {
+            _isSwitchingCamera = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task CaptureImage()
     {
         if (_isCapturing) return;
         if (JSRuntime == null) return;
 
-        // CRITICAL FIX: Set state BEFORE JS call and notify immediately
         _isCapturing = true;
         _buttonText = "Capturando...";
         _errorMessage = "Capturando...";
-        
-        // CRITICAL FIX: Force UI update BEFORE await - this makes the button
-        // text change visible immediately
         StateHasChanged();
 
         try
@@ -146,7 +209,7 @@
             Console.WriteLine($"[CameraCapture:CaptureImage] imageStream: {imageStream}");
             var imageBytes = imageBuffer.ToArray();
             Console.WriteLine($"[CameraCapture:CaptureImage] imageBytes: {imageBytes}");
-                 
+                  
             if (imageBytes is null || imageBytes.Length == 0)
             {
                 _errorMessage = "Falha ao capturar. Tente novamente.";
@@ -200,5 +263,21 @@
 
     public async ValueTask DisposeAsync()
     {
+        try
+        {
+            await JSRuntime!.InvokeVoidAsync("captureQuality.stopCamera", "cameraVideo");
+        }
+        catch
+        {
+        }
+    }
+
+    private class CameraInfoResult
+    {
+        public bool Success { get; set; }
+        public string? FacingMode { get; set; }
+        public bool CanSwitch { get; set; }
+        public string? DeviceId { get; set; }
+        public string? Error { get; set; }
     }
 }
